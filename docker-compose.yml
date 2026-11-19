@@ -1,0 +1,25 @@
+services:
+  chat-api:
+    build: .
+    image: novatierra_chat-api
+    container_name: novatierra_chat
+    restart: unless-stopped
+    env_file: .env
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    networks:
+      - traefik_proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik_proxy
+      - traefik.http.routers.novatierra-chat.rule=Host(`chat.novatierra.co`)
+      - traefik.http.routers.novatierra-chat.entrypoints=websecure
+      - traefik.http.routers.novatierra-chat.tls=true
+      - traefik.http.routers.novatierra-chat.tls.certresolver=mytlschallenge
+      - traefik.http.services.novatierra-chat.loadbalancer.server.port=3000
+
+networks:
+  traefik_proxy:
+    external: true
