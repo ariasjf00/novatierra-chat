@@ -112,13 +112,26 @@ function limpiar(texto) {
     .trim();
 }
 
+// Interpreta el texto del agente: JSON puro, JSON dentro de ```json ... ```,
+// JSON con texto alrededor, o texto plano sin JSON.
+function interpretarTexto(texto) {
+  const limpio = texto.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  try { return JSON.parse(limpio); } catch { /* sigue */ }
+  const inicio = limpio.indexOf('{');
+  const fin = limpio.lastIndexOf('}');
+  if (inicio !== -1 && fin > inicio) {
+    try { return JSON.parse(limpio.slice(inicio, fin + 1)); } catch { /* sigue */ }
+  }
+  // Sin JSON válido: si parece una respuesta en prosa, se usa tal cual
+  if (limpio && !limpio.includes('"respuesta"')) return { respuesta: limpio, accion: 'ninguna' };
+  return null;
+}
+
 // Normaliza y valida lo que devuelve n8n antes de enviarlo al navegador
 function normalizarRespuesta(data) {
   if (Array.isArray(data)) data = data[0];
   if (data && typeof data === 'object' && 'output' in data) data = data.output;
-  if (typeof data === 'string') {
-    try { data = JSON.parse(data); } catch { return null; }
-  }
+  if (typeof data === 'string') data = interpretarTexto(data);
   if (!data || typeof data.respuesta !== 'string' || !data.respuesta.trim()) return null;
   return {
     respuesta: data.respuesta.trim().slice(0, 2000),
@@ -133,8 +146,13 @@ async function preguntarN8n(sessionId, mensaje) {
     body: JSON.stringify({ sessionId, mensaje }),
     signal: AbortSignal.timeout(N8N_TIMEOUT_MS),
   });
-  if (!r.ok) throw new Error(`n8n respondió ${r.status}`);
-  return normalizarRespuesta(await r.json());
+  const cuerpo = await r.text();
+  if (!r.ok) throw new Error(`n8n respondió ${r.status}: ${cuerpo.slice(0, 300)}`);
+  let data;
+  try { data = JSON.parse(cuerpo); } catch { data = cuerpo; }
+  const res = normalizarRespuesta(data);
+  if (!res) console.error('Formato no reconocido. n8n devolvió:', cuerpo.slice(0, 300) || '(vacío)');
+  return res;
 }
 
 // ---------- Rutas ----------
